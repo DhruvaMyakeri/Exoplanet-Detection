@@ -10,3 +10,6 @@ views.h5
 
 # Run logs
 *.log
+
+# Phase 1 local cache - ~4.5 GB of (time, flux) arrays, refetch with fetch_all.py
+cache/
