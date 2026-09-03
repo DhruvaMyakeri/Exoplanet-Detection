@@ -215,6 +215,7 @@ def main(seeds, epochs, bs, lr, patience):
     band = np.digitize(snr, [3.0, 7.0])
     results = []
     test_preds = {}
+    val_preds = {}
     for sd in seeds:
         t0 = time.time()
         print(f"\n[seed {sd}]")
@@ -233,6 +234,10 @@ def main(seeds, epochs, bs, lr, patience):
                             best_epoch=best["epoch"], test=m, strat=strat,
                             secs=time.time() - t0))
         test_preds[f"seed{sd}"] = p
+        # Val predictions from the SELECTED model, so a calibrator can be
+        # fitted on data that is neither trained on nor the test set.
+        vp, _ = evaluate(model, G, L, y, idx["val"], device)
+        val_preds[f"seed{sd}"] = vp
         print(f"  val PR-AUC {best['pr_auc']:.4f} (ep {best['epoch']})  ->  "
               f"TEST PR-AUC {m['pr_auc']:.4f}  ROC-AUC {m['roc_auc']:.4f}  "
               f"[{time.time() - t0:.0f}s]")
@@ -256,7 +261,10 @@ def main(seeds, epochs, bs, lr, patience):
     # (Stage 4 item 3) does not require retraining.
     np.savez("cnn_test_preds.npz", test_idx=idx["test"].numpy(),
              y_true=y[idx["test"]].cpu().numpy(), **test_preds)
-    print("\n[done] wrote cnn_results.json, cnn_test_preds.npz")
+    np.savez("cnn_val_preds.npz", val_idx=idx["val"].numpy(),
+             y_true=y[idx["val"]].cpu().numpy(), **val_preds)
+    print("\n[done] wrote cnn_results.json, cnn_test_preds.npz, "
+          "cnn_val_preds.npz")
 
 
 if __name__ == "__main__":

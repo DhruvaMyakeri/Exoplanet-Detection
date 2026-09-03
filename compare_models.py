@@ -80,6 +80,7 @@ def main():
     band = np.digitize(snr, [3.0, 7.0])
     rows = []
     preds = {}
+    vpreds = {}
     for seed in [0, 1, 2]:
         # Fit on train only - the same examples the CNN fit on. The CNN
         # additionally used val for early stopping; the RF needs no such
@@ -96,6 +97,7 @@ def main():
         p = model.predict_proba(X[idx["test"]])[:, 1]
         t = y[idx["test"]]
         preds[f"seed{seed}"] = p
+        vpreds[f"seed{seed}"] = model.predict_proba(X[idx["val"]])[:, 1]
 
         strat = {}
         tb = band[idx["test"]]
@@ -142,9 +144,11 @@ def main():
 
     np.savez("rf_test_preds.npz", test_idx=idx["test"],
              y_true=y[idx["test"]], **preds)
+    np.savez("rf_val_preds.npz", val_idx=idx["val"],
+             y_true=y[idx["val"]], **vpreds)
     with open("rf_results.json", "w") as fh:
         json.dump(rows, fh, indent=2)
-    print("\n[done] wrote rf_results.json, rf_test_preds.npz")
+    print("\n[done] wrote rf_results.json, rf_test_preds.npz, rf_val_preds.npz")
 
 
 if __name__ == "__main__":
