@@ -92,12 +92,20 @@ def process_star(kepid, rows, window):
         return [], f"KIC {kepid}: {type(e).__name__}: {e}"
 
 
-def main(workers, window, include_candidates, out):
+def main(workers, window, include_candidates, only_candidates, out):
     BV.OUT = out
     koi = pd.read_csv(BV.KOI_CSV)
-    keep = ["CONFIRMED", "FALSE POSITIVE"]
-    if include_candidates:
-        keep.append("CANDIDATE")
+    # label = int(disp == "CONFIRMED"), so a CANDIDATE lands on label 0 -
+    # indistinguishable from a FALSE POSITIVE. Keeping them in the same
+    # store as the training data means any code that splits on `label`
+    # instead of `disp` silently trains on ~1900 mislabelled rows.
+    # --only-candidates writes them to their own file so that cannot happen.
+    if only_candidates:
+        keep = ["CANDIDATE"]
+    elif include_candidates:
+        keep = ["CONFIRMED", "FALSE POSITIVE", "CANDIDATE"]
+    else:
+        keep = ["CONFIRMED", "FALSE POSITIVE"]
     koi = koi[koi.koi_disposition.isin(keep)]
     koi = koi.dropna(subset=["koi_period", "koi_time0bk", "koi_duration"])
 
@@ -157,6 +165,9 @@ if __name__ == "__main__":
     ap.add_argument("--workers", type=int, default=12)
     ap.add_argument("--window", type=int, default=101)
     ap.add_argument("--include-candidates", action="store_true")
+    ap.add_argument("--only-candidates", action="store_true",
+                    help="build ONLY the CANDIDATE set; use with --out to "
+                         "keep it out of the training store")
     ap.add_argument("--out", default="views.h5")
     a = ap.parse_args()
-    main(a.workers, a.window, a.include_candidates, a.out)
+    main(a.workers, a.window, a.include_candidates, a.only_candidates, a.out)
