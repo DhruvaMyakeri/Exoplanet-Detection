@@ -11,6 +11,8 @@ Usage:
     python inspect_views.py
 """
 
+import os
+
 import h5py
 import numpy as np
 import pandas as pd
@@ -20,6 +22,7 @@ import matplotlib.pyplot as plt
 
 H5 = "views.h5"
 KOI_CSV = "koi_ephem.csv"
+CACHE = "cache"
 
 
 def main():
@@ -74,17 +77,44 @@ def main():
     koi = koi[koi.koi_disposition.isin(["CONFIRMED", "FALSE POSITIVE"])]
     koi = koi.dropna(subset=["koi_period", "koi_time0bk", "koi_duration"])
 
-    stars_done = set(f["kepid"][:].tolist())
+    # The denominator must be every star we HAD DATA FOR, not every star
+    # that ended up in views.h5. A star whose KOIs were all dropped never
+    # appears in f["kepid"], so keying on that set silently excludes total
+    # failures from their own drop rate. Measured 2026-09-03: that bug
+    # reported 1% when the true rate was 10.1%.
+    if os.path.isdir(CACHE):
+        stars_done = {int(x[:-4]) for x in os.listdir(CACHE)
+                      if x.endswith(".npz")}
+    else:                                   # pre-cache pipeline, best effort
+        stars_done = set(f["kepid"][:].tolist())
     attempted = koi[koi.kepid.isin(stars_done)]
     got = set(name)
     dropped = attempted[~attempted.kepoi_name.isin(got)]
 
-    print(f"\n[drop] {len(attempted)} KOIs on the stars processed, "
-          f"{len(got)} stored, {len(dropped)} dropped "
-          f"({len(dropped) / max(len(attempted), 1) * 100:.0f}%)")
+    print(f"\n[drop] {len(attempted)} KOIs on the {len(stars_done)} stars "
+          f"with data, {len(attempted) - len(dropped)} stored, "
+          f"{len(dropped)} dropped "
+          f"({len(dropped) / max(len(attempted), 1) * 100:.1f}%)")
     if len(dropped):
+        # Rates, not counts. Counts alone hide the bias: 727 FP vs 38
+        # CONFIRMED looks like class imbalance until you divide through
+        # and see 15.0% vs 1.4%.
         print("\n[drop] by disposition:")
-        print(dropped.koi_disposition.value_counts().to_string())
+        tab = (attempted.assign(kept=attempted.kepoi_name.isin(got))
+                        .groupby("koi_disposition")["kept"]
+                        .agg(kept="sum", total="count"))
+        tab["dropped"] = tab.total - tab.kept
+        tab["drop_%"] = (100 * tab.dropped / tab.total).round(1)
+        print(tab.to_string())
+
+        base_before = (attempted.koi_disposition == "CONFIRMED").mean()
+        kept_rows = attempted[attempted.kepoi_name.isin(got)]
+        base_after = (kept_rows.koi_disposition == "CONFIRMED").mean()
+        print(f"\n[drop] planet fraction before drops: {base_before*100:.1f}%")
+        print(f"[drop] planet fraction after  drops: {base_after*100:.1f}%")
+        if abs(base_after - base_before) > 0.01:
+            print("[drop] WARNING: drops are class-biased. The base rate "
+                  "moved. Disclose this alongside any headline metric.")
         print(f"\n[drop] median period of dropped:   "
               f"{dropped.koi_period.median():8.2f} d")
         print(f"[drop] median period of kept:      "
